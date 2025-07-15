@@ -1,4 +1,3 @@
-// File: src/main/java/com/cogniwritepro/model/ContentRequest.java
 package com.cogniwritepro.model;
 
 import jakarta.persistence.*;
@@ -8,6 +7,8 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 
 @Entity
 @Table(name = "content_requests")
@@ -21,28 +22,46 @@ public class ContentRequest {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, length = 1000) // Adjust length as needed for prompts
+    @Column(nullable = false, length = 1000)
     private String prompt;
 
     @Column(nullable = false)
-    private String targetPlatform; // e.g., "Twitter", "LinkedIn", "Blog Post", "Email Marketing"
+    private String targetPlatform;
 
-    // Many-to-one relationship with AudienceProfile
-    @ManyToOne(fetch = FetchType.LAZY) // LAZY fetching is good for performance
-    @JoinColumn(name = "audience_profile_id", nullable = false) // FK column name
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "audience_profile_id", nullable = false)
     private AudienceProfile audienceProfile;
 
-    // Optional: User who made the request
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = true) // Can be null if requests are public or anonymous
+    @JoinColumn(name = "user_id", nullable = true)
     private User user;
 
     @Column(nullable = false)
-    private LocalDateTime createdAt; // Timestamp of when the request was made
+    private LocalDateTime createdAt;
 
-    @PrePersist // JPA lifecycle callback: sets createdAt before persisting the entity
+    @Column(nullable = false)
+    private Double temperature = 0.7;
+
+    @Column(nullable = false, length = 50)
+    private String model = "gemini";
+
+    // CHANGED: Added orphanRemoval and cascade settings
+    @OneToMany(
+            mappedBy = "contentRequest",
+            cascade = CascadeType.ALL,
+            orphanRemoval = true
+    )
+    private List<GeneratedContent> generatedContents = new ArrayList<>();
+
+    @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
+    }
+
+    // Helper method to add generated content
+    public void addGeneratedContent(GeneratedContent content) {
+        generatedContents.add(content);
+        content.setContentRequest(this);
     }
 
     @Override
@@ -52,6 +71,8 @@ public class ContentRequest {
                 ", prompt='" + prompt + '\'' +
                 ", targetPlatform='" + targetPlatform + '\'' +
                 ", createdAt=" + createdAt +
+                ", temperature=" + temperature +
+                ", model='" + model + '\'' +
                 ", audienceProfileId=" + (audienceProfile != null ? audienceProfile.getId() : "null") +
                 ", userId=" + (user != null ? user.getId() : "null") +
                 '}';

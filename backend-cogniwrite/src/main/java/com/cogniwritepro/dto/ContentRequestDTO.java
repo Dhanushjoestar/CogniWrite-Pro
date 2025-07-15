@@ -2,26 +2,31 @@
 package com.cogniwritepro.dto;
 
 import lombok.AllArgsConstructor;
-import lombok.Getter;
+import lombok.Data;
 import lombok.NoArgsConstructor;
-import lombok.Setter;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
-@Getter
-@Setter
+@Data
 @NoArgsConstructor
 @AllArgsConstructor
 public class ContentRequestDTO {
-    private Long id; // Will be null for new requests
+    private Long id;
     private String prompt;
     private String targetPlatform;
-    private Long audienceProfileId; // Only send the ID from the frontend
-    private Long userId; // Only send the ID from the frontend (optional, depending on auth)
-    private LocalDateTime createdAt; // Populated by backend
+    private Long audienceProfileId;
+    private Long userId;
+    private LocalDateTime createdAt;
 
-    // Nested DTO for response if needed (optional)
+    // NEW: Generation parameters
+    private Double temperature = 0.7;
+    private String model = "gemini";
+
+    // Optional nested DTOs (for responses only)
     private AudienceProfileDTO audienceProfile;
     private UserDTO user;
-    private GeneratedContentDTO generatedContent; // For retrieval responses
+
+    // CHANGED: Now returns list of content
+    private List<GeneratedContentDTO> generatedContents;
 }
