@@ -1,11 +1,11 @@
 // src/components/layout/Sidebar.jsx
 import React, { useEffect, useState } from 'react';
-import { 
-  MessageSquare, 
-  TestTube, 
-  FileCheck, 
-  History, 
-  Menu, 
+import {
+  MessageSquare,
+  TestTube,
+  FileCheck,
+  History,
+  Menu,
   X,
   Sparkles,
   Activity,
@@ -20,6 +20,7 @@ import TabButton from '../common/TabButton';
 import HistoryItem from '../common/HistoryItem';
 import UserProfile from '../common/UserProfile';
 import { getHistoryItems } from '../../services/contentService';
+import { useAuth } from '../../context/AuthContext'; // Import useAuth hook
 
 const Sidebar = ({
   isSidebarOpen,
@@ -27,22 +28,37 @@ const Sidebar = ({
   activeTab,
   setActiveTab,
   onHistoryItemClick,
-  onDeleteHistoryItem
+  onDeleteHistoryItem,
+  onShowAuthModal,
+  onLogout
 }) => {
+  const { user: authUser, isLoggedIn: authIsLoggedIn } = useAuth(); // Get user and isLoggedIn from AuthContext
   const [historyList, setHistoryList] = useState([]);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState(null);
   const [historyExpanded, setHistoryExpanded] = useState(true);
 
-  // Fetch history items on component mount or when onDeleteHistoryItem might trigger a refresh
+  // Fetch history items on component mount or when authUser/authIsLoggedIn changes
   useEffect(() => {
     const fetchHistory = async () => {
       setHistoryLoading(true);
       setHistoryError(null);
+
+      // NEW: Log auth state for debugging
+      console.log('Sidebar useEffect - authIsLoggedIn:', authIsLoggedIn, 'authUser:', authUser);
+
+      // Only fetch history if the user is logged in AND their ID is available
+      if (!authIsLoggedIn || !authUser?.id) {
+        setHistoryList([]); // Clear history if not logged in or ID is missing
+        setHistoryLoading(false);
+        console.log("Not logged in or user ID missing, skipping history fetch.");
+        return;
+      }
+
       try {
-        const userId = 1; // Placeholder user ID
-        const items = await getHistoryItems(userId);
+        const items = await getHistoryItems(authUser.id); // Use authUser.id from context
         setHistoryList(items);
+        console.log("Successfully fetched history items:", items);
       } catch (err) {
         console.error('Failed to fetch history:', err);
         setHistoryError('Failed to load history.');
@@ -50,27 +66,29 @@ const Sidebar = ({
         setHistoryLoading(false);
       }
     };
+    // Re-fetch history when onDeleteHistoryItem changes (indicating a delete operation)
+    // or when the authentication state (authUser, authIsLoggedIn) changes.
     fetchHistory();
-  }, [onDeleteHistoryItem]);
+  }, [onDeleteHistoryItem, authUser, authIsLoggedIn]); // Add authUser and authIsLoggedIn to dependencies
 
   const navigationItems = [
-    { 
-      id: 'generate', 
-      icon: MessageSquare, 
+    {
+      id: 'generate',
+      icon: MessageSquare,
       label: 'Generate Content',
       gradient: 'from-blue-500 to-purple-600',
       description: 'AI-powered content creation'
     },
-    { 
-      id: 'ab-test', 
-      icon: TestTube, 
+    {
+      id: 'ab-test',
+      icon: TestTube,
       label: 'A/B Test',
       gradient: 'from-violet-500 to-purple-600',
       description: 'Compare content variants'
     },
-    { 
-      id: 'review', 
-      icon: FileCheck, 
+    {
+      id: 'review',
+      icon: FileCheck,
       label: 'Content Review',
       gradient: 'from-indigo-500 to-blue-600',
       description: 'Analyze content performance'
@@ -79,14 +97,17 @@ const Sidebar = ({
 
   const getItemCount = (tabId) => {
     return historyList.filter(item => {
-      if (tabId === 'generate') return item.type === 'generate' || !item.type;
-      if (tabId === 'ab-test') return item.type === 'ab-test';
-      if (tabId === 'review') return item.type === 'review';
+      // Ensure item.type is checked, defaulting to 'generate' if not explicitly set
+      const itemType = item.type || 'generate';
+      if (tabId === 'generate') return itemType === 'generate';
+      if (tabId === 'ab-test') return itemType === 'ab-test';
+      if (tabId === 'review') return itemType === 'review';
       return false;
     }).length;
   };
 
   const getRecentActivity = () => {
+    // Show up to 3 most recent items
     return historyList.slice(0, 3);
   };
 
@@ -141,7 +162,7 @@ const Sidebar = ({
             <span className="text-sm font-medium text-gray-400">Tools</span>
           </div>
         )}
-        
+
         {navigationItems.map((item) => (
           <div key={item.id} className="relative group">
             <TabButton
@@ -152,12 +173,12 @@ const Sidebar = ({
               onClick={setActiveTab}
               isSidebarOpen={isSidebarOpen}
               className={`relative overflow-hidden ${
-                activeTab === item.id 
-                  ? `bg-gradient-to-r ${item.gradient} shadow-lg transform scale-[1.02]` 
+                activeTab === item.id
+                  ? `bg-gradient-to-r ${item.gradient} shadow-lg transform scale-[1.02]`
                   : 'bg-slate-800/30 hover:bg-slate-700/50 border border-slate-600/30'
               } transition-all duration-200 rounded-xl p-3`}
             />
-            
+
             {/* Enhanced tooltip for collapsed state */}
             {!isSidebarOpen && (
               <div className="absolute left-full ml-2 top-1/2 transform -translate-y-1/2 bg-slate-900 text-white px-3 py-2 rounded-lg shadow-xl opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-50 whitespace-nowrap border border-slate-600">
@@ -295,7 +316,13 @@ const Sidebar = ({
 
       {/* User Profile - Fixed at the bottom */}
       <div className="p-4 border-t border-slate-700/50 flex-shrink-0">
-        <UserProfile isSidebarOpen={isSidebarOpen} />
+        <UserProfile
+          isSidebarOpen={isSidebarOpen}
+          user={authUser} // Pass user from AuthContext
+          isLoggedIn={authIsLoggedIn} // Pass isLoggedIn from AuthContext
+          onShowAuthModal={onShowAuthModal}
+          onLogout={onLogout}
+        />
       </div>
     </div>
   );

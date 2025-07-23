@@ -14,7 +14,6 @@ import com.cogniwritepro.model.GeneratedContent;
 import com.cogniwritepro.model.User;
 import com.cogniwritepro.repository.AudienceProfileRepository;
 import com.cogniwritepro.repository.ContentRequestRepository;
-import com.cogniwritepro.repository.GeneratedContentRepository;
 import com.cogniwritepro.repository.UserRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -22,6 +21,8 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -34,110 +35,102 @@ public class ContentRequestService {
     private final ContentRequestRepository contentRequestRepository;
     private final AudienceProfileRepository audienceProfileRepository;
     private final UserRepository userRepository;
-    private final GeneratedContentRepository generatedContentRepository;
     private final LLMService llmService;
-    private final ContentAnalysisService analysisService;
+    private final ContentAnalysisService contentAnalysisService;
 
     @Transactional
     public ContentRequestDTO createAndGenerateContent(ContentRequestDTO requestDTO) {
-        log.info("Creating content request with model: {}", requestDTO.getModel());
+        log.info("Creating and generating content for prompt: {}", requestDTO.getPrompt());
 
-        // Step 1: Fetch audience profile
         AudienceProfile audienceProfile = audienceProfileRepository.findById(requestDTO.getAudienceProfileId())
-                .orElseThrow(() -> new RuntimeException("Audience Profile not found with id: " + requestDTO.getAudienceProfileId()));
+                .orElseThrow(() -> new RuntimeException("Audience Profile not found with ID: " + requestDTO.getAudienceProfileId()));
 
-        // Step 2: Fetch user (optional)
         User user = null;
         if (requestDTO.getUserId() != null) {
             user = userRepository.findById(requestDTO.getUserId())
-                    .orElseThrow(() -> new RuntimeException("User not found with id: " + requestDTO.getUserId()));
+                    .orElseThrow(() -> new RuntimeException("User not found with ID: " + requestDTO.getUserId()));
         }
 
-        // Step 3: Save ContentRequest
         ContentRequest contentRequest = new ContentRequest();
         contentRequest.setPrompt(requestDTO.getPrompt());
         contentRequest.setTargetPlatform(requestDTO.getTargetPlatform());
-        contentRequest.setAudienceProfile(audienceProfile);
-        contentRequest.setUser(user);
-        contentRequest.setTemperature(requestDTO.getTemperature() != null ? requestDTO.getTemperature() : 0.7);
         contentRequest.setModel(requestDTO.getModel() != null ? requestDTO.getModel() : "gemini");
+        contentRequest.setTemperature(requestDTO.getTemperature() != null ? requestDTO.getTemperature() : 0.7);
+        contentRequest.setAudienceProfile(audienceProfile);
+        contentRequest.setUser(user); // Set the User entity if found
+        // REMOVED: contentRequest.setUserId(requestDTO.getUserId()); // Removed explicit userId setter
+        contentRequest.setCreatedAt(LocalDateTime.now());
+        contentRequest.setGeneratedContents(new ArrayList<>());
 
-        ContentRequest savedRequest = contentRequestRepository.save(contentRequest);
+        contentRequest = contentRequestRepository.save(contentRequest);
 
-        // Step 4: Generate LLM prompt
         String llmPrompt = buildLlmPrompt(
-                savedRequest.getPrompt(),
-                savedRequest.getTargetPlatform(),
+                contentRequest.getPrompt(),
+                contentRequest.getTargetPlatform(),
                 audienceProfile
         );
 
         log.info("Generated LLM prompt: {}", llmPrompt);
 
-        // Step 5: Generate content variant with better error handling
         try {
-            GeneratedContent generatedContent = llmService.generateContentVariant(
+            GeneratedContent generatedContentFromLLM = llmService.generateContentVariant(
                     llmPrompt,
-                    savedRequest.getModel(),
-                    savedRequest.getTemperature(),
-                    savedRequest.getTargetPlatform()
+                    contentRequest.getModel(),
+                    contentRequest.getTemperature(),
+                    contentRequest.getTargetPlatform()
             );
+
+            String generatedText = generatedContentFromLLM.getContent();
+            ContentMetrics metrics = generatedContentFromLLM.getMetrics();
+
+            GeneratedContent generatedContent = new GeneratedContent();
+            generatedContent.setContent(generatedText);
             generatedContent.setVariantA(true);
-            generatedContent.setCreatedAt(LocalDateTime.now()); // Corrected: setCreatedAt
-            generatedContent.setContentRequest(savedRequest);
-            generatedContent.setModelUsed(savedRequest.getModel());
-            generatedContent.setTemperatureUsed(savedRequest.getTemperature());
+            generatedContent.setModelUsed(contentRequest.getModel());
+            generatedContent.setTemperatureUsed(contentRequest.getTemperature());
+            generatedContent.setMetrics(metrics);
+            generatedContent.setContentRequest(contentRequest);
+            generatedContent.setCreatedAt(LocalDateTime.now()); // Ensure createdAt is set for GeneratedContent
 
-            // Generate and set metrics
-            ContentMetrics metricsDto = analysisService.analyzeContent(generatedContent.getContent(), savedRequest.getTargetPlatform());
-            ContentMetrics metricsEntity = new ContentMetrics();
-            metricsEntity.setReadabilityScore(metricsDto.getReadabilityScore());
-            metricsEntity.setClarityScore(metricsDto.getClarityScore());
-            metricsEntity.setEngagementPrediction(metricsDto.getEngagementPrediction());
-            metricsEntity.setPlatformOptimization(metricsDto.getPlatformOptimization());
-            metricsEntity.setOptimizationTips(metricsDto.getOptimizationTips());
-            // metricsEntity.setGeneratedContent(generatedContent); // REMOVED: ContentMetrics is @Embeddable, cannot have this relationship
-            generatedContent.setMetrics(metricsEntity); // This is how the metrics are associated
+            contentRequest.addGeneratedContent(generatedContent);
 
-            savedRequest.addGeneratedContent(generatedContent);
-            contentRequestRepository.save(savedRequest);
+            contentRequest = contentRequestRepository.save(contentRequest);
 
-            log.info("Successfully generated content with model: {}", savedRequest.getModel());
+            log.info("Successfully generated content with ID: {}", contentRequest.getId());
         } catch (Exception e) {
-            log.error("Error generating content with model {}: {}", savedRequest.getModel(), e.getMessage());
+            log.error("Error generating content with model {}: {}", contentRequest.getModel(), e.getMessage());
             throw new RuntimeException("Failed to generate content: " + e.getMessage(), e);
         }
 
-        // Step 6: Return full DTO
-        return convertEntityToDto(savedRequest);
+        return convertEntityToDto(contentRequest);
     }
 
     @Transactional
     public ContentRequestDTO createABTestContent(ContentRequestDTO requestDTO) {
-        log.info("Creating AB test content with primary model: {}", requestDTO.getModel());
+        log.info("Creating A/B test content with primary model: {}", requestDTO.getModel());
 
-        // Step 1: Fetch audience profile
         AudienceProfile audienceProfile = audienceProfileRepository.findById(requestDTO.getAudienceProfileId())
-                .orElseThrow(() -> new RuntimeException("Audience Profile not found with id: " + requestDTO.getAudienceProfileId()));
+                .orElseThrow(() -> new RuntimeException("Audience Profile not found with ID: " + requestDTO.getAudienceProfileId()));
 
-        // Step 2: Fetch user (optional)
         User user = null;
         if (requestDTO.getUserId() != null) {
             user = userRepository.findById(requestDTO.getUserId())
-                    .orElseThrow(() -> new RuntimeException("User not found with id: " + requestDTO.getUserId()));
+                    .orElseThrow(() -> new RuntimeException("User not found with ID: " + requestDTO.getUserId()));
         }
 
-        // Step 3: Create and save ContentRequest
         ContentRequest contentRequest = new ContentRequest();
         contentRequest.setPrompt(requestDTO.getPrompt());
         contentRequest.setTargetPlatform(requestDTO.getTargetPlatform());
+        contentRequest.setModel(requestDTO.getModel() != null ? requestDTO.getModel() : "gemini");
+        contentRequest.setTemperature(requestDTO.getTemperature() != null ? requestDTO.getTemperature() : 0.7);
         contentRequest.setAudienceProfile(audienceProfile);
         contentRequest.setUser(user);
-        contentRequest.setTemperature(requestDTO.getTemperature() != null ? requestDTO.getTemperature() : 0.7);
-        contentRequest.setModel(requestDTO.getModel() != null ? requestDTO.getModel() : "gemini");
+        // REMOVED: contentRequest.setUserId(requestDTO.getUserId()); // Removed explicit userId setter
+        contentRequest.setCreatedAt(LocalDateTime.now());
+        contentRequest.setGeneratedContents(new ArrayList<>());
 
         ContentRequest savedRequest = contentRequestRepository.save(contentRequest);
 
-        // Step 4: Generate LLM prompt
         String llmPrompt = buildLlmPrompt(
                 savedRequest.getPrompt(),
                 savedRequest.getTargetPlatform(),
@@ -145,59 +138,46 @@ public class ContentRequestService {
         );
 
         try {
-            // Step 5: Generate Variant A
-            GeneratedContent variantA = llmService.generateContentVariant(
+            // Generate Variant A
+            GeneratedContent generatedContentAFromLLM = llmService.generateContentVariant(
                     llmPrompt,
                     savedRequest.getModel(),
                     savedRequest.getTemperature(),
                     savedRequest.getTargetPlatform()
             );
+            String generatedTextA = generatedContentAFromLLM.getContent();
+            ContentMetrics metricsA = generatedContentAFromLLM.getMetrics();
+
+            GeneratedContent variantA = new GeneratedContent();
+            variantA.setContent(generatedTextA);
             variantA.setVariantA(true);
-            variantA.setCreatedAt(LocalDateTime.now()); // Corrected: setCreatedAt
-            variantA.setContentRequest(savedRequest);
             variantA.setModelUsed(savedRequest.getModel());
             variantA.setTemperatureUsed(savedRequest.getTemperature());
-
-            // Generate and set metrics for Variant A
-            ContentMetrics metricsADto = analysisService.analyzeContent(variantA.getContent(), savedRequest.getTargetPlatform());
-            ContentMetrics metricsAEntity = new ContentMetrics();
-            metricsAEntity.setReadabilityScore(metricsADto.getReadabilityScore());
-            metricsAEntity.setClarityScore(metricsADto.getClarityScore());
-            metricsAEntity.setEngagementPrediction(metricsADto.getEngagementPrediction());
-            metricsAEntity.setPlatformOptimization(metricsADto.getPlatformOptimization());
-            metricsAEntity.setOptimizationTips(metricsADto.getOptimizationTips());
-            // metricsAEntity.setGeneratedContent(variantA); // REMOVED
-            variantA.setMetrics(metricsAEntity);
+            variantA.setMetrics(metricsA);
+            variantA.setContentRequest(savedRequest);
+            variantA.setCreatedAt(LocalDateTime.now()); // Ensure createdAt is set for GeneratedContent
+            savedRequest.addGeneratedContent(variantA);
 
 
-            // Step 6: Generate Variant B with different model
-            String variantBModel = "mistral".equals(savedRequest.getModel()) ? "gemini" : "mistral";
-            GeneratedContent variantB = llmService.generateContentVariant(
-                    llmPrompt,
+            // Generate Variant B with different model (using gemini-1.5-flash for reliability)
+            String variantBModel = "gemini-1.5-flash"; // Hardcoded for reliability as Mistral was failing
+            GeneratedContent generatedContentBFromLLM = llmService.generateContentVariant(
+                    llmPrompt + " (alternative version)",
                     variantBModel,
-                    Math.min(1.0, savedRequest.getTemperature() + 0.2),  // Slightly higher temp
+                    Math.min(1.0, savedRequest.getTemperature() + 0.2),
                     savedRequest.getTargetPlatform()
             );
+            String generatedTextB = generatedContentBFromLLM.getContent();
+            ContentMetrics metricsB = generatedContentBFromLLM.getMetrics();
+
+            GeneratedContent variantB = new GeneratedContent();
+            variantB.setContent(generatedTextB);
             variantB.setVariantA(false);
-            variantB.setCreatedAt(LocalDateTime.now()); // Corrected: setCreatedAt
-            variantB.setContentRequest(savedRequest);
             variantB.setModelUsed(variantBModel);
             variantB.setTemperatureUsed(Math.min(1.0, savedRequest.getTemperature() + 0.2));
-
-            // Generate and set metrics for Variant B
-            ContentMetrics metricsBDto = analysisService.analyzeContent(variantB.getContent(), savedRequest.getTargetPlatform());
-            ContentMetrics metricsBEntity = new ContentMetrics();
-            metricsBEntity.setReadabilityScore(metricsBDto.getReadabilityScore());
-            metricsBEntity.setClarityScore(metricsBDto.getClarityScore());
-            metricsBEntity.setEngagementPrediction(metricsBDto.getEngagementPrediction());
-            metricsBEntity.setPlatformOptimization(metricsBDto.getPlatformOptimization());
-            metricsBEntity.setOptimizationTips(metricsBDto.getOptimizationTips());
-            // metricsBEntity.setGeneratedContent(variantB); // REMOVED
-            variantB.setMetrics(metricsBEntity);
-
-
-            // Step 7: Add both variants to request
-            savedRequest.addGeneratedContent(variantA);
+            variantB.setMetrics(metricsB);
+            variantB.setContentRequest(savedRequest);
+            variantB.setCreatedAt(LocalDateTime.now()); // Ensure createdAt is set for GeneratedContent
             savedRequest.addGeneratedContent(variantB);
 
             ContentRequest updatedRequest = contentRequestRepository.save(savedRequest);
@@ -212,33 +192,47 @@ public class ContentRequestService {
         }
     }
 
-    public ContentRequestDTO getContentRequestById(Long id) {
-        ContentRequest contentRequest = contentRequestRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Content Request not found with id: " + id));
-        return convertEntityToDto(contentRequest);
+    @Transactional(readOnly = true)
+    public ContentRequestDTO getFullContentRequestDetails(Long id) {
+        return contentRequestRepository.findById(id)
+                .map(this::convertEntityToDto)
+                .orElse(null);
     }
 
+    @Transactional(readOnly = true)
     public List<ContentRequestDTO> getAllContentRequests() {
         return contentRequestRepository.findAll().stream()
                 .map(this::convertEntityToDto)
                 .collect(Collectors.toList());
     }
 
-    public List<ContentRequestDTO> getContentRequestsByUserId(Long userId) {
-        return contentRequestRepository.findByUserIdOrderByCreatedAtDesc(userId).stream()
-                .map(this::convertEntityToDto)
+    @Transactional(readOnly = true)
+    public List<ContentHistoryItemDTO> getHistoryItems(Long userId) {
+        List<ContentRequest> requests;
+        if (userId != null) {
+            requests = contentRequestRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        } else {
+            return Collections.emptyList();
+        }
+
+        return requests.stream()
+                .map(req -> {
+                    String type = "generate";
+                    if (req.getGeneratedContents() != null && req.getGeneratedContents().size() > 1) {
+                        type = "ab-test";
+                    }
+                    return new ContentHistoryItemDTO(req.getId(), req.getPrompt(), req.getCreatedAt(), type);
+                })
                 .collect(Collectors.toList());
     }
 
     @Transactional
     public void deleteContentRequest(Long id) {
-        ContentRequest request = contentRequestRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("Content Request not found with id: " + id));
-
-        request.getGeneratedContents().clear();
-        contentRequestRepository.save(request);
-
+        if (!contentRequestRepository.existsById(id)) {
+            throw new RuntimeException("Content Request not found with id: " + id);
+        }
         contentRequestRepository.deleteById(id);
+        log.info("Content Request with ID {} deleted successfully.", id);
     }
 
     private String buildLlmPrompt(String userPrompt, String targetPlatform, AudienceProfile audienceProfile) {
@@ -296,12 +290,12 @@ public class ContentRequestService {
             profileDTO.setPersonaType(profile.getPersonaType());
             profileDTO.setTone(profile.getTone());
             dto.setAudienceProfile(profileDTO);
+            dto.setAudience(profile.getProfileName());
         }
 
         if (entity.getUser() != null) {
             User user = entity.getUser();
             dto.setUserId(user.getId());
-
             UserDTO userDTO = new UserDTO();
             userDTO.setId(user.getId());
             userDTO.setName(user.getName());
@@ -345,28 +339,5 @@ public class ContentRequestService {
         }
 
         return dto;
-    }
-
-    // NEW: Method to get history items (summaries)
-    @Transactional(readOnly = true)
-    public List<ContentHistoryItemDTO> getHistoryItems(Long userId) {
-        List<ContentRequest> requests;
-        if (userId != null) {
-            requests = contentRequestRepository.findByUserIdOrderByCreatedAtDesc(userId);
-        } else {
-            requests = contentRequestRepository.findAllByOrderByCreatedAtDesc();
-        }
-
-        return requests.stream()
-                .map(req -> new ContentHistoryItemDTO(req.getId(), req.getPrompt(), req.getCreatedAt()))
-                .collect(Collectors.toList());
-    }
-
-    // NEW: Method to get full content request details by ID
-    @Transactional(readOnly = true)
-    public ContentRequestDTO getFullContentRequestDetails(Long id) {
-        return contentRequestRepository.findById(id)
-                .map(this::convertEntityToDto)
-                .orElse(null);
     }
 }

@@ -1,16 +1,16 @@
 // src/components/common/HistoryItem.jsx
 import React, { useState } from 'react';
-import { 
-  Trash2, 
-  MessageSquare, 
-  TestTube, 
-  FileCheck, 
-  Clock, 
+import {
+  Trash2,
+  MessageSquare,
+  TestTube,
+  FileCheck,
+  Clock,
   MoreVertical,
   Copy,
   Share2,
   Eye,
-  AlertTriangle
+  AlertTriangle // Import AlertTriangle for the confirmation modal
 } from 'lucide-react';
 
 const HistoryItem = ({ item, onClick, onDelete, compact = false }) => {
@@ -31,9 +31,9 @@ const HistoryItem = ({ item, onClick, onDelete, compact = false }) => {
       if (diffMins < 60) return `${diffMins}m ago`;
       if (diffHours < 24) return `${diffHours}h ago`;
       if (diffDays < 7) return `${diffDays}d ago`;
-      
-      return date.toLocaleDateString('en-US', { 
-        month: 'short', 
+
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
         day: 'numeric',
         ...(diffDays > 365 ? { year: 'numeric' } : {})
       });
@@ -44,6 +44,7 @@ const HistoryItem = ({ item, onClick, onDelete, compact = false }) => {
   };
 
   const getItemTypeInfo = () => {
+    // Ensure item.type is a string and default to 'generate' if null/undefined
     const type = item.type || 'generate';
     switch (type) {
       case 'generate':
@@ -99,7 +100,9 @@ const HistoryItem = ({ item, onClick, onDelete, compact = false }) => {
 
   const handleCopy = (e) => {
     e.stopPropagation();
-    navigator.clipboard.writeText(item.prompt);
+    navigator.clipboard.writeText(item.prompt)
+      .then(() => console.log('Prompt copied to clipboard!'))
+      .catch(err => console.error('Failed to copy prompt:', err));
   };
 
   const typeInfo = getItemTypeInfo();
@@ -143,8 +146,8 @@ const HistoryItem = ({ item, onClick, onDelete, compact = false }) => {
   return (
     <div
       className={`group relative p-4 rounded-xl cursor-pointer transition-all duration-200 border ${
-        isHovered 
-          ? 'bg-slate-700/50 border-slate-500/50 transform scale-[1.02]' 
+        isHovered
+          ? 'bg-slate-700/50 border-slate-500/50 transform scale-[1.02]'
           : `${typeInfo.bgColor} ${typeInfo.borderColor}`
       } hover:shadow-lg`}
       onClick={() => onClick?.(item)}
@@ -169,11 +172,11 @@ const HistoryItem = ({ item, onClick, onDelete, compact = false }) => {
               <span>{formatDate(item.createdAt)}</span>
             </div>
           </div>
-          
+
           <div className="text-sm font-medium text-white mb-1 line-clamp-2">
             {item.prompt}
           </div>
-          
+
           {/* Metadata */}
           <div className="flex items-center space-x-4 text-xs text-gray-400">
             {item.platform && (
@@ -202,14 +205,14 @@ const HistoryItem = ({ item, onClick, onDelete, compact = false }) => {
           >
             <Copy className="w-4 h-4" />
           </button>
-          
+
           <button
             className="p-2 rounded-lg hover:bg-slate-600/50 text-gray-400 hover:text-white transition-colors"
             title="Share"
           >
             <Share2 className="w-4 h-4" />
           </button>
-          
+
           <button
             onClick={handleDeleteClick}
             className="p-2 rounded-lg hover:bg-red-500/20 text-red-400 hover:text-red-300 transition-colors"
@@ -233,7 +236,7 @@ const HistoryItem = ({ item, onClick, onDelete, compact = false }) => {
                 <p className="text-gray-400 text-sm">This action cannot be undone.</p>
               </div>
             </div>
-            
+
             <div className="flex space-x-2">
               <button
                 onClick={cancelDelete}

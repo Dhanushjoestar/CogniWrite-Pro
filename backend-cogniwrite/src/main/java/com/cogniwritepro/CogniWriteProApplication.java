@@ -14,20 +14,6 @@ public class CogniWriteProApplication {
 		SpringApplication.run(CogniWriteProApplication.class, args);
 	}
 
-	// Configure CORS to allow requests from your React Vite frontend
-	@Bean
-	public WebMvcConfigurer corsConfigurer() {
-		return new WebMvcConfigurer() {
-			@Override
-			public void addCorsMappings(CorsRegistry registry) {
-				registry.addMapping("/api/**") // Apply CORS to all /api endpoints
-						.allowedOrigins("http://localhost:5173") // <--- CHANGE THIS LINE
-						.allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
-						.allowedHeaders("*")
-						.allowCredentials(true);
-			}
-		};
-	}
 
 	@Bean  // Add this method
 	public RestTemplate restTemplate() {

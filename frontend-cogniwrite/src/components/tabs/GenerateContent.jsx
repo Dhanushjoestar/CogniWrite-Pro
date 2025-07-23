@@ -8,8 +8,11 @@ import Slider from '../ui/Slider';
 import { platforms, models } from '../../constants/data';
 import { generateContent, generateMetrics } from '../../services/contentService';
 import { getAllAudienceProfiles } from '../../services/audienceService';
+import { useAuth } from '../../context/AuthContext'; // NEW: Import useAuth
 
 const GenerateContent = ({ prefilledData }) => {
+  const { user, isLoggedIn } = useAuth(); // NEW: Get user and isLoggedIn from AuthContext
+
   const [prompt, setPrompt] = useState(prefilledData?.prompt || '');
   const [selectedPlatform, setSelectedPlatform] = useState(prefilledData?.platform || '');
   const [selectedAudienceProfileId, setSelectedAudienceProfileId] = useState(prefilledData?.audienceProfileId || '');
@@ -37,7 +40,7 @@ const GenerateContent = ({ prefilledData }) => {
     });
   });
 
-  // Fetch audience profiles when the component mounts
+  // Fetch audience profiles when the component mounts or prefilledData changes
   useEffect(() => {
     const fetchProfiles = async () => {
       try {
@@ -60,7 +63,37 @@ const GenerateContent = ({ prefilledData }) => {
       }
     };
     fetchProfiles();
-  }, [prefilledData]);
+  }, [prefilledData]); // Removed audienceProfiles from dependency array to prevent infinite loop
+
+  // Effect to handle pre-filled data (from history)
+  useEffect(() => {
+    if (prefilledData) {
+      setPrompt(prefilledData.prompt || '');
+      setSelectedPlatform(prefilledData.platform || '');
+      setSelectedAudienceProfileId(String(prefilledData.audienceProfileId) || '');
+      setSelectedModel(prefilledData.model || '');
+      setSelectedTemperature(prefilledData.temperature || 0.7);
+      setGeneratedContent(prefilledData.generatedContent || '');
+      setGeneratedMetrics(prefilledData.generatedMetrics || null);
+      setError(null);
+    } else {
+      // Reset form if no prefilledData (e.g., new chat)
+      setPrompt('');
+      setSelectedPlatform('');
+      // Keep first audience profile selected if available
+      if (audienceProfiles.length > 0) {
+        setSelectedAudienceProfileId(String(audienceProfiles[0].id));
+      } else {
+        setSelectedAudienceProfileId(''); // Ensure it's empty if no profiles
+      }
+      setSelectedModel(''); // Reset model to empty string
+      setSelectedTemperature(0.7);
+      setGeneratedContent('');
+      setGeneratedMetrics(null);
+      setError(null);
+    }
+  }, [prefilledData, audienceProfiles]); // Add audienceProfiles to dependency array
+
 
   const handleGenerate = async () => {
     if (!prompt.trim() || !selectedPlatform || !selectedAudienceProfileId || !selectedModel) {
@@ -83,7 +116,7 @@ const GenerateContent = ({ prefilledData }) => {
         audienceProfileId: parseInt(selectedAudienceProfileId),
         model: selectedModel,
         temperature: parseFloat(selectedTemperature),
-        userId: 1,
+        userId: isLoggedIn ? user.id : null, // MODIFIED: Pass userId if logged in, otherwise null
       };
 
       console.log('Sending content generation payload:', payload);
@@ -224,7 +257,7 @@ const GenerateContent = ({ prefilledData }) => {
                     options={platformOptions}
                     placeholder="Select target platform"
                   />
-                  
+
                   <Select
                     label="AI Model"
                     value={selectedModel}
@@ -331,14 +364,14 @@ const GenerateContent = ({ prefilledData }) => {
               <h4 className="text-lg font-semibold text-white mb-4">Creativity Level</h4>
               <div className="relative">
                 <div className="w-full bg-slate-700 rounded-full h-3">
-                  <div 
+                  <div
                     className="bg-gradient-to-r from-blue-500 to-purple-500 h-3 rounded-full transition-all duration-300"
                     style={{ width: `${(selectedTemperature / 1.5) * 100}%` }}
                   ></div>
                 </div>
                 <div className="text-center mt-2 text-sm text-gray-400">
-                  {selectedTemperature < 0.5 ? 'Conservative' : 
-                   selectedTemperature < 1.0 ? 'Balanced' : 'Creative'}
+                  {selectedTemperature < 0.5 ? 'Conservative' :
+                    selectedTemperature < 1.0 ? 'Balanced' : 'Creative'}
                 </div>
               </div>
             </div>
@@ -356,7 +389,7 @@ const GenerateContent = ({ prefilledData }) => {
               </div>
               <h4 className="text-2xl font-bold text-white">Generated Content & Analytics</h4>
             </div>
-            
+
             {generatedContent && !isGenerating && (
               <div className="flex space-x-3">
                 <Button
@@ -407,7 +440,7 @@ const GenerateContent = ({ prefilledData }) => {
                         {generatedContent}
                       </div>
                     </div>
-                    
+
                     {/* Content Stats */}
                     <div className="flex flex-wrap gap-4 pt-4 border-t border-slate-600">
                       <div className="flex items-center space-x-2 bg-slate-700/50 rounded-lg px-3 py-2">
@@ -448,7 +481,7 @@ const GenerateContent = ({ prefilledData }) => {
                     <BarChart3 className="w-5 h-5 text-blue-400" />
                     <span>Performance Metrics</span>
                   </h5>
-                  
+
                   {/* Score Cards */}
                   <div className="space-y-4">
                     <div className="bg-slate-800/70 rounded-lg p-4 border border-slate-600/50">
@@ -459,7 +492,7 @@ const GenerateContent = ({ prefilledData }) => {
                         </span>
                       </div>
                       <div className="w-full bg-slate-700 rounded-full h-2">
-                        <div 
+                        <div
                           className={`h-2 rounded-full transition-all duration-500 ${getScoreBgColor(generatedMetrics.readabilityScore)}`}
                           style={{ width: `${(generatedMetrics.readabilityScore / 10) * 100}%` }}
                         ></div>
@@ -474,7 +507,7 @@ const GenerateContent = ({ prefilledData }) => {
                         </span>
                       </div>
                       <div className="w-full bg-slate-700 rounded-full h-2">
-                        <div 
+                        <div
                           className={`h-2 rounded-full transition-all duration-500 ${getScoreBgColor(generatedMetrics.clarityScore)}`}
                           style={{ width: `${(generatedMetrics.clarityScore / 10) * 100}%` }}
                         ></div>
@@ -489,7 +522,7 @@ const GenerateContent = ({ prefilledData }) => {
                         </span>
                       </div>
                       <div className="w-full bg-slate-700 rounded-full h-2">
-                        <div 
+                        <div
                           className={`h-2 rounded-full transition-all duration-500 ${getScoreBgColor(generatedMetrics.platformOptimization, 100)}`}
                           style={{ width: `${generatedMetrics.platformOptimization}%` }}
                         ></div>

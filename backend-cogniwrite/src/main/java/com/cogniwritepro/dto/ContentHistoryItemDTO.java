@@ -13,4 +13,5 @@ public class ContentHistoryItemDTO {
     private Long id;
     private String prompt;
     private LocalDateTime createdAt;
+    private String type; // NEW: Added type to distinguish between 'generate' and 'ab-test'
 }

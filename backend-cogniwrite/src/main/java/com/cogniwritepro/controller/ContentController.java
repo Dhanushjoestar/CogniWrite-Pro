@@ -5,12 +5,15 @@ import com.cogniwritepro.dto.ContentMetricsDTO;
 import com.cogniwritepro.dto.ContentRequestDTO;
 import com.cogniwritepro.dto.ContentReviewDTO;
 import com.cogniwritepro.model.ContentMetrics;
+import com.cogniwritepro.security.CustomUserDetails; // NEW: Import CustomUserDetails
 import com.cogniwritepro.service.ContentAnalysisService;
 import com.cogniwritepro.service.ContentRequestService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.Authentication; // NEW: Import Authentication
+import org.springframework.security.core.context.SecurityContextHolder; // NEW: Import SecurityContextHolder
 import org.springframework.web.bind.annotation.*;
 
 import java.util.HashMap;
@@ -26,6 +29,16 @@ public class ContentController {
     private final ContentRequestService contentRequestService;
     private final ContentAnalysisService contentAnalysisService;
 
+    // NEW: Helper method to get authenticated user's ID
+    private Long getCurrentUserId() {
+        Authentication authentication = SecurityContextHolder.getContext().getAuthentication();
+        if (authentication != null && authentication.isAuthenticated() && authentication.getPrincipal() instanceof CustomUserDetails) {
+            CustomUserDetails userDetails = (CustomUserDetails) authentication.getPrincipal();
+            return userDetails.getId(); // Return the actual user ID
+        }
+        return null; // No authenticated user or principal not CustomUserDetails
+    }
+
 
     // Existing single content generation endpoint
     @PostMapping("/generate")
@@ -40,6 +53,11 @@ public class ContentController {
                 error.put("error", "Prompt cannot be empty");
                 return new ResponseEntity<>(error, HttpStatus.BAD_REQUEST);
             }
+
+            // MODIFIED: Set userId from authenticated context
+            // Frontend might send userId, but backend should always verify/override from authenticated context for security
+            requestDTO.setUserId(getCurrentUserId());
+
 
             // Generate content
             ContentRequestDTO generatedContentDTO = contentRequestService.createAndGenerateContent(requestDTO);
@@ -119,6 +137,9 @@ public class ContentController {
 
             }
 
+            // MODIFIED: Set userId from authenticated context
+            requestDTO.setUserId(getCurrentUserId());
+
             // Generate A/B test content
             ContentRequestDTO generatedContentDTO = contentRequestService.createABTestContent(requestDTO);
 
@@ -148,7 +169,7 @@ public class ContentController {
     @GetMapping("/{id}")
     public ResponseEntity<ContentRequestDTO> getContentById(@PathVariable Long id) {
         try {
-            ContentRequestDTO content = contentRequestService.getContentRequestById(id);
+            ContentRequestDTO content = contentRequestService.getFullContentRequestDetails(id);
             return ResponseEntity.ok(content);
         } catch (RuntimeException e) {
             log.error("Content not found with ID: {}", id, e);
@@ -156,14 +177,6 @@ public class ContentController {
         }
     }
 
-    @GetMapping("/user/{userId}")
-    public ResponseEntity<List<ContentRequestDTO>> getContentByUserId(@PathVariable Long userId) {
-        List<ContentRequestDTO> contents = contentRequestService.getContentRequestsByUserId(userId);
-        if (contents.isEmpty()) {
-            return ResponseEntity.noContent().build();
-        }
-        return ResponseEntity.ok(contents);
-    }
 
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteContent(@PathVariable Long id) {
@@ -175,10 +188,11 @@ public class ContentController {
             return ResponseEntity.notFound().build();
         }
     }
-    // NEW: Endpoint to get content history summaries
+    // MODIFIED: Endpoint to get content history summaries
     @GetMapping("/history")
-    public ResponseEntity<List<ContentHistoryItemDTO>> getHistory(@RequestParam(required = false) Long userId) {
+    public ResponseEntity<List<ContentHistoryItemDTO>> getHistory() { // Removed @RequestParam userId
         try {
+            Long userId = getCurrentUserId(); // Get the authenticated user's ID
             List<ContentHistoryItemDTO> history = contentRequestService.getHistoryItems(userId);
             return ResponseEntity.ok(history);
         } catch (Exception e) {
