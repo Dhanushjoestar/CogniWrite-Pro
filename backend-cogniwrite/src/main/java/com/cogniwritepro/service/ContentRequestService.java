@@ -50,6 +50,8 @@ public class ContentRequestService {
             user = userRepository.findById(requestDTO.getUserId())
                     .orElseThrow(() -> new RuntimeException("User not found with ID: " + requestDTO.getUserId()));
         }
+        log.info("Fetched User for generation: {} (ID: {})", user != null ? user.getEmail() : "N/A", user != null ? user.getId() : "N/A"); // DEBUG LOG
+        log.info("Fetched AudienceProfile for generation: {} (ID: {})", audienceProfile.getProfileName(), audienceProfile.getId()); // DEBUG LOG
 
         ContentRequest contentRequest = new ContentRequest();
         contentRequest.setPrompt(requestDTO.getPrompt());
@@ -58,11 +60,15 @@ public class ContentRequestService {
         contentRequest.setTemperature(requestDTO.getTemperature() != null ? requestDTO.getTemperature() : 0.7);
         contentRequest.setAudienceProfile(audienceProfile);
         contentRequest.setUser(user); // Set the User entity if found
-        // REMOVED: contentRequest.setUserId(requestDTO.getUserId()); // Removed explicit userId setter
         contentRequest.setCreatedAt(LocalDateTime.now());
         contentRequest.setGeneratedContents(new ArrayList<>());
 
         contentRequest = contentRequestRepository.save(contentRequest);
+        log.info("ContentRequest entity saved with ID: {}", contentRequest.getId()); // DEBUG LOG
+        // NEW: Re-fetch the entity to ensure all relationships are loaded into the persistence context
+        contentRequest = contentRequestRepository.findById(contentRequest.getId())
+                .orElseThrow(() -> new RuntimeException("Failed to re-fetch ContentRequest after save for single generation"));
+        log.info("ContentRequest re-fetched after save for single generation. User ID: {}", contentRequest.getUser() != null ? contentRequest.getUser().getId() : "NULL"); // DEBUG LOG
 
         String llmPrompt = buildLlmPrompt(
                 contentRequest.getPrompt(),
@@ -85,24 +91,28 @@ public class ContentRequestService {
 
             GeneratedContent generatedContent = new GeneratedContent();
             generatedContent.setContent(generatedText);
-            generatedContent.setVariantA(true);
+            generatedContent.setVariantA(true); // For single generation, consider it variant A
             generatedContent.setModelUsed(contentRequest.getModel());
             generatedContent.setTemperatureUsed(contentRequest.getTemperature());
             generatedContent.setMetrics(metrics);
             generatedContent.setContentRequest(contentRequest);
-            generatedContent.setCreatedAt(LocalDateTime.now()); // Ensure createdAt is set for GeneratedContent
+            generatedContent.setCreatedAt(LocalDateTime.now());
 
             contentRequest.addGeneratedContent(generatedContent);
 
             contentRequest = contentRequestRepository.save(contentRequest);
+            log.info("GeneratedContent added and ContentRequest updated. Final ContentRequest ID: {}", contentRequest.getId()); // DEBUG LOG
+            // NEW: Re-fetch again to ensure the generated content is fully loaded before DTO conversion
+            contentRequest = contentRequestRepository.findById(contentRequest.getId())
+                    .orElseThrow(() -> new RuntimeException("Failed to re-fetch ContentRequest after adding generated content"));
+            log.info("ContentRequest re-fetched after adding generated content. Generated contents count: {}", contentRequest.getGeneratedContents().size()); // DEBUG LOG
 
-            log.info("Successfully generated content with ID: {}", contentRequest.getId());
+
+            return convertEntityToDto(contentRequest);
         } catch (Exception e) {
             log.error("Error generating content with model {}: {}", contentRequest.getModel(), e.getMessage());
             throw new RuntimeException("Failed to generate content: " + e.getMessage(), e);
         }
-
-        return convertEntityToDto(contentRequest);
     }
 
     @Transactional
@@ -117,6 +127,8 @@ public class ContentRequestService {
             user = userRepository.findById(requestDTO.getUserId())
                     .orElseThrow(() -> new RuntimeException("User not found with ID: " + requestDTO.getUserId()));
         }
+        log.info("Fetched User for AB Test: {} (ID: {})", user != null ? user.getEmail() : "N/A", user != null ? user.getId() : "N/A"); // DEBUG LOG
+        log.info("Fetched AudienceProfile for AB Test: {} (ID: {})", audienceProfile.getProfileName(), audienceProfile.getId()); // DEBUG LOG
 
         ContentRequest contentRequest = new ContentRequest();
         contentRequest.setPrompt(requestDTO.getPrompt());
@@ -125,11 +137,16 @@ public class ContentRequestService {
         contentRequest.setTemperature(requestDTO.getTemperature() != null ? requestDTO.getTemperature() : 0.7);
         contentRequest.setAudienceProfile(audienceProfile);
         contentRequest.setUser(user);
-        // REMOVED: contentRequest.setUserId(requestDTO.getUserId()); // Removed explicit userId setter
         contentRequest.setCreatedAt(LocalDateTime.now());
         contentRequest.setGeneratedContents(new ArrayList<>());
 
         ContentRequest savedRequest = contentRequestRepository.save(contentRequest);
+        log.info("AB Test ContentRequest entity saved with ID: {}", savedRequest.getId()); // DEBUG LOG
+        // NEW: Re-fetch the entity to ensure all relationships are loaded into the persistence context
+        savedRequest = contentRequestRepository.findById(savedRequest.getId())
+                .orElseThrow(() -> new RuntimeException("Failed to re-fetch ContentRequest after save for AB test"));
+        log.info("ContentRequest re-fetched after initial save for AB test. User ID: {}", savedRequest.getUser() != null ? savedRequest.getUser().getId() : "NULL"); // DEBUG LOG
+
 
         String llmPrompt = buildLlmPrompt(
                 savedRequest.getPrompt(),
@@ -150,14 +167,14 @@ public class ContentRequestService {
 
             GeneratedContent variantA = new GeneratedContent();
             variantA.setContent(generatedTextA);
-            variantA.setVariantA(true);
+            variantA.setVariantA(true); // Explicitly set variantA to true
             variantA.setModelUsed(savedRequest.getModel());
             variantA.setTemperatureUsed(savedRequest.getTemperature());
             variantA.setMetrics(metricsA);
             variantA.setContentRequest(savedRequest);
-            variantA.setCreatedAt(LocalDateTime.now()); // Ensure createdAt is set for GeneratedContent
+            variantA.setCreatedAt(LocalDateTime.now());
             savedRequest.addGeneratedContent(variantA);
-
+            log.info("Variant A generated and added to ContentRequest. Content length: {}", generatedTextA.length()); // DEBUG LOG
 
             // Generate Variant B with different model (using gemini-1.5-flash for reliability)
             String variantBModel = "gemini-1.5-flash"; // Hardcoded for reliability as Mistral was failing
@@ -172,18 +189,23 @@ public class ContentRequestService {
 
             GeneratedContent variantB = new GeneratedContent();
             variantB.setContent(generatedTextB);
-            variantB.setVariantA(false);
+            variantB.setVariantA(false); // Explicitly set variantA to false
             variantB.setModelUsed(variantBModel);
             variantB.setTemperatureUsed(Math.min(1.0, savedRequest.getTemperature() + 0.2));
             variantB.setMetrics(metricsB);
             variantB.setContentRequest(savedRequest);
-            variantB.setCreatedAt(LocalDateTime.now()); // Ensure createdAt is set for GeneratedContent
+            variantB.setCreatedAt(LocalDateTime.now());
             savedRequest.addGeneratedContent(variantB);
+            log.info("Variant B generated and added to ContentRequest. Content length: {}", generatedTextB.length()); // DEBUG LOG
 
             ContentRequest updatedRequest = contentRequestRepository.save(savedRequest);
+            log.info("AB Test ContentRequest updated with both variants. Final ContentRequest ID: {}", updatedRequest.getId()); // DEBUG LOG
+            // NEW: Re-fetch again to ensure both generated contents are fully loaded before DTO conversion
+            updatedRequest = contentRequestRepository.findById(updatedRequest.getId())
+                    .orElseThrow(() -> new RuntimeException("Failed to re-fetch ContentRequest after adding both generated contents"));
+            log.info("ContentRequest re-fetched after adding both generated contents. Generated contents count: {}", updatedRequest.getGeneratedContents().size()); // DEBUG LOG
 
-            log.info("Successfully created AB test with models: {} and {}",
-                    savedRequest.getModel(), variantBModel);
+            log.info("ContentRequest entity before DTO conversion (AB Test): {}", updatedRequest.toString()); // DEBUG LOG
 
             return convertEntityToDto(updatedRequest);
         } catch (Exception e) {
@@ -194,6 +216,7 @@ public class ContentRequestService {
 
     @Transactional(readOnly = true)
     public ContentRequestDTO getFullContentRequestDetails(Long id) {
+        log.info("Fetching full content request details for ID: {}", id); // DEBUG LOG
         return contentRequestRepository.findById(id)
                 .map(this::convertEntityToDto)
                 .orElse(null);
@@ -201,6 +224,7 @@ public class ContentRequestService {
 
     @Transactional(readOnly = true)
     public List<ContentRequestDTO> getAllContentRequests() {
+        log.info("Fetching all content requests."); // DEBUG LOG
         return contentRequestRepository.findAll().stream()
                 .map(this::convertEntityToDto)
                 .collect(Collectors.toList());
@@ -208,10 +232,13 @@ public class ContentRequestService {
 
     @Transactional(readOnly = true)
     public List<ContentHistoryItemDTO> getHistoryItems(Long userId) {
+        log.info("Fetching history items for userId: {}", userId); // DEBUG LOG
         List<ContentRequest> requests;
         if (userId != null) {
             requests = contentRequestRepository.findByUserIdOrderByCreatedAtDesc(userId);
+            log.info("Found {} history items for userId: {}", requests.size(), userId); // DEBUG LOG
         } else {
+            log.warn("No userId provided for history items. Returning empty list."); // DEBUG LOG
             return Collections.emptyList();
         }
 
@@ -228,11 +255,13 @@ public class ContentRequestService {
 
     @Transactional
     public void deleteContentRequest(Long id) {
+        log.info("Attempting to delete content request with ID: {}", id); // DEBUG LOG
         if (!contentRequestRepository.existsById(id)) {
+            log.warn("Content Request with ID {} not found for deletion.", id); // DEBUG LOG
             throw new RuntimeException("Content Request not found with id: " + id);
         }
         contentRequestRepository.deleteById(id);
-        log.info("Content Request with ID {} deleted successfully.", id);
+        log.info("Content Request with ID {} deleted successfully.", id); // DEBUG LOG
     }
 
     private String buildLlmPrompt(String userPrompt, String targetPlatform, AudienceProfile audienceProfile) {
@@ -295,13 +324,15 @@ public class ContentRequestService {
 
         if (entity.getUser() != null) {
             User user = entity.getUser();
-            dto.setUserId(user.getId());
+            dto.setUserId(user.getId()); // Set userId in DTO from User entity
             UserDTO userDTO = new UserDTO();
             userDTO.setId(user.getId());
             userDTO.setName(user.getName());
             userDTO.setEmail(user.getEmail());
             userDTO.setRole(user.getRole());
             dto.setUser(userDTO);
+        } else {
+            dto.setUserId(null); // Explicitly set to null if user is not found/associated
         }
 
         if (entity.getGeneratedContents() != null) {
@@ -312,7 +343,8 @@ public class ContentRequestService {
         } else {
             dto.setGeneratedContents(List.of());
         }
-
+        log.info("Converted DTO for ContentRequest ID {}: userId={}, generatedContents.size={}",
+                entity.getId(), dto.getUserId(), dto.getGeneratedContents().size()); // DEBUG LOG
         return dto;
     }
 
@@ -337,7 +369,7 @@ public class ContentRequestService {
             metricsDTO.setOptimizationTips(metrics.getOptimizationTips());
             dto.setMetrics(metricsDTO);
         }
-
+        log.info("Converted GeneratedContentDTO ID {}: variantA={}, contentSnippet='{}'", dto.getId(), dto.isVariantA(), dto.getContent() != null ? dto.getContent().substring(0, Math.min(50, dto.getContent().length())) + "..." : "N/A"); // DEBUG LOG
         return dto;
     }
 }
