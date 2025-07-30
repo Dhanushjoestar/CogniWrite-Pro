@@ -1,13 +1,6 @@
    
 
     services:
-      # Frontend Service (Static Site)
-      - type: static
-        name: cogniwrite-pro-frontend
-        buildCommand: npm run build
-        staticPublishPath: frontend-cogniwrite/dist 
-        
-
       # Backend Service (Web Service)
       - type: web
         name: cogniwrite-pro-backend
