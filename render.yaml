@@ -4,7 +4,6 @@
       # Backend Service (Web Service)
       - type: web
         name: cogniwrite-pro-backend
-        env: java 
         rootDir: backend-cogniwrite 
         buildCommand: ./mvnw clean install -DskipTests
         startCommand: java -jar target/cogniwrite-0.0.1-SNAPSHOT.jar 
