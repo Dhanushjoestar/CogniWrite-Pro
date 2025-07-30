@@ -3,11 +3,10 @@
     services:
       # Backend Service (Web Service)
       - type: web
-        name: cogniwrite-pro-backend
+        name: cogniwrite-pro-backend 
         rootDir: backend-cogniwrite 
-        buildCommand: ./mvnw clean install -DskipTests
-        startCommand: java -jar target/cogniwrite-0.0.1-SNAPSHOT.jar 
-        plan: free
+        dockerfilePath: backend-cogniwrite/Dockerfile 
+        plan: free 
         
         envVars:
           
