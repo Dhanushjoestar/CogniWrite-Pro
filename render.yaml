@@ -1,29 +1,24 @@
-    # render.yaml
-    # This file defines services for Render.
-    # It should be placed in the root of your Git repository.
+   
 
     services:
       # Frontend Service (Static Site)
       - type: static
         name: cogniwrite-pro-frontend
         buildCommand: npm run build
-        staticPublishPath: frontend-cogniwrite/dist # Assuming Vite build output
-        # Environment variables for frontend will be added on Netlify later
-        # envVars:
-        #   - key: VITE_API_BASE_URL
-        #     value: https://your-backend-app-name.onrender.com/api # Placeholder for backend URL
+        staticPublishPath: frontend-cogniwrite/dist 
+        
 
       # Backend Service (Web Service)
       - type: web
         name: cogniwrite-pro-backend
-        env: java # Explicitly tell Render this is a Java service
-        rootDir: backend-cogniwrite # Specify the root directory for this service
+        env: java 
+        rootDir: backend-cogniwrite 
         buildCommand: ./mvnw clean install -DskipTests
-        startCommand: java -jar target/cogniwrite-0.0.1-SNAPSHOT.jar # Ensure JAR name matches
-        plan: free # Use the free plan
-        # Add your environment variables here directly, or reference them from Render's dashboard
+        startCommand: java -jar target/cogniwrite-0.0.1-SNAPSHOT.jar 
+        plan: free
+        
         envVars:
-          # Database Connection (from your PostgreSQL service)
+          
           - key: SPRING_DATASOURCE_URL
             value: jdbc:postgresql://cogniwriteuser:CgpHDHMrgMZF7AB3P71Y5CIPrEC1iOM7@dpg-d20ein95pdvs73cfblp0-a.singapore-postgres.render.com/cogniwritepro
           - key: SPRING_DATASOURCE_USERNAME
@@ -35,21 +30,21 @@
           - key: SPRING_JPA_DATABASE_PLATFORM
             value: org.hibernate.dialect.PostgreSQLDialect
           - key: SPRING_JPA_HIBERNATE_DDL_AUTO
-            value: update # Set to 'update' for initial table creation
+            value: update 
 
           # LLM API Keys
           - key: MISTRAL_API_KEY
-            value: YOUR_ACTUAL_MISTRAL_API_KEY # REPLACE WITH YOUR KEY
+            value: 74AnZaz7PDcxgmHO8Up4AzlbZ3f5O01t
           - key: MISTRAL_API_URL
             value: https://api.mistral.ai/v1
           - key: MISTRAL_MODEL
             value: /chat/completions
           - key: GEMINI_API_KEY
-            value: YOUR_ACTUAL_GEMINI_API_KEY # REPLACE WITH YOUR KEY
+            value: AIzaSyDSriHZg82VefBBohaL8HqZKVMlmZv_IAo
 
           # JWT Secret
           - key: JWT_SECRET
-            value: A_VERY_LONG_RANDOM_STRING_FOR_JWT_SECURITY # REPLACE WITH A STRONG, RANDOM KEY
+            value: N2UwZTE3NjM2YjYxNjg3NDYxNmE2NDU4NzE0MzU5NDY3NDY5MmY0MjM1NzUzODMxMzc=
           - key: JWT_EXPIRATION_MS
-            value: "86400000" # Value must be a string in YAML
+            value: "86400000" 
     
